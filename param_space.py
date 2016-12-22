@@ -1,8 +1,6 @@
 from itertools import product
 
-from joblib import Parallel, delayed
-
-from collections import abc
+from collections import abc, defaultdict
 
 class ParamSpace:
     def __init__(self, spec):
@@ -59,13 +57,39 @@ class ParamSpace:
         new_spec = {}
         key_union = self.spec.keys() | other_space.spec.keys()
         for key in key_union:
-            l1 =  self.spec.get(key, [])
+            l1 = self.spec.get(key, [])
             l2 = other_space.spec.get(key, [])
-
-            merged = list(set(l1 + l2))
-            new_spec[key] = merged
+            new_vals = l1 or l2
+            if l1 and l2 and set(l1) != set(l2):
+                raise TypeError('Cannot union spaces: different values for same key: {}'.format(key))
+            new_spec[key] = new_vals
 
         return ParamSpace(new_spec)
+
+    def intersection(self, other_space):
+        new_spec = {}
+        key_intersection = self.spec.keys() & other_space.spec.keys()
+
+        for key in key_intersection:
+            l1 = self.spec.get(key, [])
+            l2 = other_space.spec.get(key, [])
+            if set(l1) != set(l2):
+                raise TypeError('Cannot get intersection: different values for same key: {}'.format(key))
+            new_spec[key] = l1
+
+    def difference(self, other_space):
+        new_spec = {}
+
+        try:
+            self.intersection(other_space)
+        except TypeError as e:
+            raise TypeError('TypeError when trying to get difference') from e
+
+        key_diff = self.spec.keys().difference(other_space.spec.keys())
+        for key in key_diff:
+            new_spec[key] = other_space.spec[key]
+
+        return new_spec
 
     def __eq__(self, other_space):
         if self.spec.keys() != other_space.spec.keys():
@@ -78,6 +102,12 @@ class ParamSpace:
             if set(l1) != set(l2):
                 return False
         return True
+
+    def lift_function(self, func):
+        return Function(self, func)
+
+    def make_point(self, key):
+        return Point(self, key)
 
 class Point:
     def __init__(self, pspace, key):
@@ -139,7 +169,7 @@ class Map:
     def __repr__(self):
         return repr(self.map)
 
-class Func:
+class Function:
     def __init__(self, pspace, func):
         self.pspace = pspace
         self.func = func
@@ -151,18 +181,8 @@ class Func:
             result_map[p] = self.func(*args)
         return Map(self.pspace, result_map)
 
-    def parallel_call(self, *arg_maps):
-        points = list(self.pspace.points())
-        jobs = []
-        for p in points:
-            args = [arg_map.get_value(p) for arg_map in arg_maps]
-            jobs.append(delayed(self.func)(*args))
-        results = Parallel(n_jobs=-1)(jobs)
-        result_map = {}
-        for p, result in zip(points, results):
-            result_map[p] = result
-
-        return Map(self.pspace, result_map)
+    def __call__(self, *arg_maps):
+        return self.call(*arg_maps)
 
 #### convenience stuff
 
@@ -178,3 +198,60 @@ def unit_map(pspace, unit=None):
     for p in pspace.points():
         unit_map[p] = unit
     return Map(pspace, unit_map)
+
+class MappedFunction:
+    unevaluated = object()
+
+    def __init__(self, function, *arg_maps):
+        self.function = function
+        self.cache_map = unit_map(self.function.pspace, unit=unevaluated)
+        self.arg_maps = arg_maps
+
+    @property
+    def pspace(self):
+        return self.function.pspace
+
+    def get_value(self, point):
+        if point.pspace != self.pspace:
+            raise TypeError('point must be in the same param space as the map')
+        value = self.cache_map.get_value(point)
+        if value is unevaluated:
+            args = [arg_map.get_value(point) for arg_map in self.arg_maps]
+            value = self.function.func(*args)
+            self.cache_map.set_value(point, value)
+
+        return value
+
+def expand_point(point1, pspace2):
+    extra_space = pspace2.difference(point1.pspace)
+    for p in extra_space.points():
+        new_key = p.key.copy()
+        new_key.update(point1.key)
+        yield Point(pspace2, new_key)
+
+def expand_map(map1, pspace2):
+    new_map_dict = {}
+    for point1 in map1.pspace.points():
+        for point2 in expand_points(point1, pspace2):
+            new_map_dict[point2] = map1.get_value(point1)
+    return Map(pspace2, new_map_dict)
+
+def contract_point(point2, pspace1):
+    new_key_dict = {}
+    for k in pspace1.spec:
+        new_key_dict[k] = point2.key[k]
+    return Point(pspace1, new_key_dict)
+
+def contract_map(map2, pspace1):
+    extra_space = map2.pspace.difference(pspace1)
+    
+    extra_map_dict = defaultdict(dict)
+
+    for point2 in map2.pspace.points():
+        extra_point = contract_point(point2, extra_space)
+        point1 = contract_point(point2, pspace1)
+        extra_map_dict[point1][extra_point] = map2.get_value(point2)
+
+    extra_map_dict2 = {k: Map(extra_space, v) for (k, v) in extra_map_dict.items()}
+    return Map(pspace1, extra_map_dict2)
+
