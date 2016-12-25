@@ -91,7 +91,7 @@ class ParamSpace:
         except TypeError as e:
             raise TypeError('TypeError when trying to get difference') from e
 
-        key_diff = self.spec.keys().difference(other_space.spec.keys())
+        key_diff = self.spec.keys() - other_space.spec.keys()
         for key in key_diff:
             new_spec[key] = other_space.spec[key]
 
