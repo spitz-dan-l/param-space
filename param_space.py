@@ -274,7 +274,7 @@ def unstack_map(map1, pspace2):
     
     for point1 in map1.pspace.points():
         for point2 in expand_point(point1, pspace2):
-            extra_point = contract_point(pspace2, extra_space)
+            extra_point = contract_point(point2, extra_space)
             new_map_dict[point2] = map1.get_value(point1).get_value(extra_point)
     
     return pspace2.make_map(new_map_dict)
