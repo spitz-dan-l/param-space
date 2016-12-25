@@ -30,6 +30,8 @@ class ParamSpace:
             yield self.make_point(key)
 
     def drop(self, names):
+        if isinstance(names, str):
+            raise TypeError('names must be an iterable of strings, and not a single string')
         new_spec = self.spec.copy()
         for name in names:
             if name not in new_spec:
@@ -45,6 +47,8 @@ class ParamSpace:
         return ParamSpace(new_spec)
 
     def subspace(self, names):
+        if isinstance(names, str):
+            raise TypeError('names must be an iterable of strings, and not a single string')
         new_spec = {}
 
         for name in names:
