@@ -27,7 +27,7 @@ class ParamSpace:
 
         for values in product(*categories):
             key = dict(zip(names, values))
-            yield Point(self, key)
+            yield self.make_point(key)
 
     def drop(self, names):
         new_spec = self.spec.copy()
@@ -76,6 +76,8 @@ class ParamSpace:
             if set(l1) != set(l2):
                 raise TypeError('Cannot get intersection: different values for same key: {}'.format(key))
             new_spec[key] = l1
+            
+        return ParamSpace(new_spec)
 
     def difference(self, other_space):
         new_spec = {}
@@ -89,7 +91,7 @@ class ParamSpace:
         for key in key_diff:
             new_spec[key] = other_space.spec[key]
 
-        return new_spec
+        return ParamSpace(new_spec)
 
     def __eq__(self, other_space):
         if self.spec.keys() != other_space.spec.keys():
@@ -108,6 +110,9 @@ class ParamSpace:
 
     def make_point(self, key):
         return Point(self, key)
+    
+    def make_map(self, map):
+        return Map(self, map)
 
 class Point:
     def __init__(self, pspace, key):
@@ -179,7 +184,7 @@ class Function:
         for p in self.pspace.points():
             args = [arg_map.get_value(p) for arg_map in arg_maps]
             result_map[p] = self.func(*args)
-        return Map(self.pspace, result_map)
+        return self.pspace.make_map(result_map)
 
     def __call__(self, *arg_maps):
         return self.call(*arg_maps)
@@ -190,14 +195,14 @@ def keys_map(pspace):
     keys_map = {}
     for p in pspace.points():
         keys_map[p] = p.key
-    return Map(pspace, keys_map)
+    return pspace.make_map(keys_map)
 
 
 def unit_map(pspace, unit=None):
     unit_map = {}
     for p in pspace.points():
         unit_map[p] = unit
-    return Map(pspace, unit_map)
+    return pspace.make_map(unit_map)
 
 class MappedFunction:
     unevaluated = object()
@@ -227,20 +232,20 @@ def expand_point(point1, pspace2):
     for p in extra_space.points():
         new_key = p.key.copy()
         new_key.update(point1.key)
-        yield Point(pspace2, new_key)
+        yield pspace2.make_point(new_key)
 
 def expand_map(map1, pspace2):
     new_map_dict = {}
     for point1 in map1.pspace.points():
-        for point2 in expand_points(point1, pspace2):
+        for point2 in expand_point(point1, pspace2):
             new_map_dict[point2] = map1.get_value(point1)
-    return Map(pspace2, new_map_dict)
+    return pspace2.make_map(new_map_dict)
 
 def contract_point(point2, pspace1):
     new_key_dict = {}
     for k in pspace1.spec:
         new_key_dict[k] = point2.key[k]
-    return Point(pspace1, new_key_dict)
+    return pspace1.make_point(new_key_dict)
 
 def contract_map(map2, pspace1):
     extra_space = map2.pspace.difference(pspace1)
@@ -252,6 +257,6 @@ def contract_map(map2, pspace1):
         point1 = contract_point(point2, pspace1)
         extra_map_dict[point1][extra_point] = map2.get_value(point2)
 
-    extra_map_dict2 = {k: Map(extra_space, v) for (k, v) in extra_map_dict.items()}
-    return Map(pspace1, extra_map_dict2)
+    extra_map_dict2 = {k: extra_space.make_map(v) for (k, v) in extra_map_dict.items()}
+    return pspace1.make_map(extra_map_dict2)
 
