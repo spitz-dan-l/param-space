@@ -163,7 +163,7 @@ class Point:
             raise TypeError("can't get distance from point in another param space")
     
         dists = []
-        for k, v in self.pspace.spec:
+        for k, v in self.pspace.spec.items():
             pos1 = v.index(self.key[k])
             pos2 = v.index(other_point.key[k])
             dist = abs(pos2 - pos1)
