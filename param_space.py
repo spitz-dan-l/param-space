@@ -267,3 +267,12 @@ def contract_map(map2, pspace1):
     extra_map_dict2 = {k: extra_space.make_map(v) for (k, v) in extra_map_dict.items()}
     return pspace1.make_map(extra_map_dict2)
 
+def collapse_map(map1):
+    # infer pspace2 then call expand
+    v = map1.get_value(next(map1.pspace.points()))
+    if not isinstance(v, Map):
+        return map1
+    else:
+        v = collapse_map(v)
+        pspace2 = map1.pspace.union(v.pspace)
+        return expand_map(map1, pspace2)
