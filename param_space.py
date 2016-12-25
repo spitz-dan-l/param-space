@@ -93,7 +93,7 @@ class ParamSpace:
 
         key_diff = self.spec.keys() - other_space.spec.keys()
         for key in key_diff:
-            new_spec[key] = other_space.spec[key]
+            new_spec[key] = self.spec[key]
 
         return ParamSpace(new_spec)
 
