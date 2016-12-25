@@ -260,14 +260,7 @@ def expand_point(point1, pspace2):
         new_key = p.key.copy()
         new_key.update(point1.key)
         yield pspace2.make_point(new_key)
-
-# def expand_map(map1, pspace2):
-#     new_map_dict = {}
-#     for point1 in map1.pspace.points():
-#         for point2 in expand_point(point1, pspace2):
-#             new_map_dict[point2] = map1.get_value(point1)
-#     return pspace2.make_map(new_map_dict)
-
+        
 def contract_point(point2, pspace1):
     new_key_dict = {}
     for k in pspace1.spec:
