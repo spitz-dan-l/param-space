@@ -109,6 +109,13 @@ class ParamSpace:
                 return False
         return True
 
+    def __len__(self):
+        product = 1
+        for v in self.spec.values():
+            product *= len(v)
+            
+        return product
+    
     def __repr__(self):
         return 'ParamSpace<{}>'.format(repr(self.spec))
     
@@ -151,6 +158,19 @@ class Point:
                 return False
         return True
 
+    def distance(self, other_point):
+        if self.pspace != other_point.pspace:
+            raise TypeError("can't get distance from point in another param space")
+    
+        dists = []
+        for k, v in self.pspace.spec:
+            pos1 = v.index(self.key[k])
+            pos2 = v.index(other_point.key[k])
+            dist = abs(pos2 - pos1)
+            dists.append(dist)
+        
+        return sum(dist**2 for dist in dists)**0.5
+            
     def __repr__(self):
         return 'Point<{}>'.format(repr(self.key))
 
