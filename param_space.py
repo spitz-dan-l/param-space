@@ -302,17 +302,43 @@ def collapse_map(map1):
         pspace2 = map1.pspace.union(v.pspace)
         return unstack_map(map1, pspace2)
 
-    
+# demo
 if __name__ == '__main__':
     #see it's great now instead of:
     for i in range(10):
         print(i)
     
-    #you just do
-    s = ParamSpace({'i': list(range(10))})
+    #you just do:
+    s1 = ParamSpace({'i': list(range(10))})
     
     def f(k):
         print(k['i'])
     
-    s.lift_function(f).call(keys_map(s))
+    s1.lift_function(f).call(keys_map(s1))
     
+    # also instead of:
+    for i in range(10):
+        for j in range(10):
+            print(i * j)
+            
+    #you just do:
+    s2 = ParamSpace({'i': list(range(10)), 'j': list(range(5))})
+    # (or):
+    s2 = s1.add({'j': list(range(5))})
+    
+    def f(k):
+        print(k['i'] * k['j'])
+    
+    s2.lift_function(f).call(keys_map(s2))
+    
+    #plus you can do this weird stacking/unstacking thing that doesn't really have an expression in for loops
+    #it's kind of like reordering the nesting order of multiple for loops
+    km = keys_map(s2)
+    
+    stacked_km1 = stack_map(km, s2.drop(['i']))
+    s2.drop(['i']).lift_function(s2.drop(['j']).lift_function(f)).call(stacked_km1)
+    
+    stacked_km2 = stack_map(km, s2.drop(['j']))
+    s2.drop(['j']).lift_function(s2.drop(['i']).lift_function(f)).call(stacked_km2)
+    
+    #this library is actually very, very useful and good in my professional work as a real developer (and you should love me)
