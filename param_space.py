@@ -301,3 +301,18 @@ def collapse_map(map1):
         v = collapse_map(v)
         pspace2 = map1.pspace.union(v.pspace)
         return unstack_map(map1, pspace2)
+
+    
+if __name__ == '__main__':
+    #see it's great now instead of:
+    for i in range(10):
+        print(i)
+    
+    #you just do
+    s = ParamSpace({'i': list(range(10))})
+    
+    def f(k):
+        print(k['i'])
+    
+    s.lift_function(f).call(keys_map(s))
+    
