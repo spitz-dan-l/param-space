@@ -241,12 +241,12 @@ def expand_point(point1, pspace2):
         new_key.update(point1.key)
         yield pspace2.make_point(new_key)
 
-def expand_map(map1, pspace2):
-    new_map_dict = {}
-    for point1 in map1.pspace.points():
-        for point2 in expand_point(point1, pspace2):
-            new_map_dict[point2] = map1.get_value(point1)
-    return pspace2.make_map(new_map_dict)
+# def expand_map(map1, pspace2):
+#     new_map_dict = {}
+#     for point1 in map1.pspace.points():
+#         for point2 in expand_point(point1, pspace2):
+#             new_map_dict[point2] = map1.get_value(point1)
+#     return pspace2.make_map(new_map_dict)
 
 def contract_point(point2, pspace1):
     new_key_dict = {}
@@ -254,7 +254,7 @@ def contract_point(point2, pspace1):
         new_key_dict[k] = point2.key[k]
     return pspace1.make_point(new_key_dict)
 
-def contract_map(map2, pspace1):
+def stack_map(map2, pspace1):
     extra_space = map2.pspace.difference(pspace1)
     
     extra_map_dict = defaultdict(dict)
@@ -267,6 +267,18 @@ def contract_map(map2, pspace1):
     extra_map_dict2 = {k: extra_space.make_map(v) for (k, v) in extra_map_dict.items()}
     return pspace1.make_map(extra_map_dict2)
 
+def unstack_map(map1, pspace2):
+    new_map_dict = {}
+    
+    extra_space = pspace2.difference(map1.pspace)
+    
+    for point1 in map1.pspace.points():
+        for point2 in expand_point(point1, pspace2):
+            extra_point = contract_point(pspace2, extra_space)
+            new_map_dict[point2] = map1.get_value(point1).get_value(extra_point)
+    
+    return pspace2.make_map(new_map_dict)
+
 def collapse_map(map1):
     # infer pspace2 then call expand
     v = map1.get_value(next(map1.pspace.points()))
@@ -275,4 +287,4 @@ def collapse_map(map1):
     else:
         v = collapse_map(v)
         pspace2 = map1.pspace.union(v.pspace)
-        return expand_map(map1, pspace2)
+        return unstack_map(map1, pspace2)
