@@ -105,6 +105,9 @@ class ParamSpace:
                 return False
         return True
 
+    def __repr__(self):
+        return 'ParamSpace<{}>'.format(repr(self.spec))
+    
     def lift_function(self, func):
         return Function(self, func)
 
@@ -145,7 +148,7 @@ class Point:
         return True
 
     def __repr__(self):
-        return repr(self.key)
+        return 'Point<{}>'.format(repr(self.key))
 
 class Map:
     def __init__(self, pspace, map):
@@ -172,7 +175,7 @@ class Map:
         self.map[point] = value
 
     def __repr__(self):
-        return repr(self.map)
+        return 'Map<{}>'.format(repr(self.map))
 
 class Function:
     def __init__(self, pspace, func):
