@@ -305,12 +305,6 @@ def kwd_apply(function):
     def func(kwds):
         return function(**kwds)
     return func
-    
-    # MappedFunction(
-    #     pspace.lift_function(kwds_apply),
-    #     keys_map(pspace)
-    # )
-
 
 # demo
 if __name__ == '__main__':
