@@ -2,6 +2,8 @@ from itertools import product
 
 from collections import abc, defaultdict
 
+from functools import partial
+
 class ParamSpace:
     def __init__(self, spec):
         self.spec = self.validate_spec(spec)
@@ -188,12 +190,12 @@ class Map:
                 raise TypeError('point '+repr(p)+' not present in map')
         return map
 
-    def get_value(self, point):
+    def __getitem__(self, point):
         if point.pspace != self.pspace:
             raise TypeError('point must be in the same param space as the map')
-        return self.map[point]
+        return self.map[point]     
 
-    def set_value(self, point, value):
+    def __setitem__(self, point, value):
         if point.pspace != self.pspace:
             raise TypeError('point must be in the same param space as the map')
         self.map[point] = value
@@ -202,19 +204,16 @@ class Map:
         return 'Map<{}>'.format(repr(self.map))
 
 class Function:
-    def __init__(self, pspace, func):
+    def __init__(self, pspace, function):
         self.pspace = pspace
-        self.func = func
-
-    def call(self, *arg_maps):
-        result_map = {}
-        for p in self.pspace.points():
-            args = [arg_map.get_value(p) for arg_map in arg_maps]
-            result_map[p] = self.func(*args)
-        return self.pspace.make_map(result_map)
+        self.function = function
 
     def __call__(self, *arg_maps):
-        return self.call(*arg_maps)
+        result_map = {}
+        for p in self.pspace.points():
+            args = [arg_map[p] for arg_map in arg_maps]
+            result_map[p] = self.function(*args)
+        return self.pspace.make_map(result_map)
 
 #### convenience stuff
 
@@ -243,14 +242,14 @@ class MappedFunction:
     def pspace(self):
         return self.function.pspace
 
-    def get_value(self, point):
+    def __getitem__(self, point):
         if point.pspace != self.pspace:
             raise TypeError('point must be in the same param space as the map')
-        value = self.cache_map.get_value(point)
+        value = self.cache_map[point]
         if value is unevaluated:
-            args = [arg_map.get_value(point) for arg_map in self.arg_maps]
+            args = [arg_map[point] for arg_map in self.arg_maps]
             value = self.function.func(*args)
-            self.cache_map.set_value(point, value)
+            self.cache_map[point] = value
 
         return value
 
@@ -275,7 +274,7 @@ def stack_map(map2, pspace1):
     for point2 in map2.pspace.points():
         extra_point = contract_point(point2, extra_space)
         point1 = contract_point(point2, pspace1)
-        extra_map_dict[point1][extra_point] = map2.get_value(point2)
+        extra_map_dict[point1][extra_point] = map2[point2]
 
     extra_map_dict2 = {k: extra_space.make_map(v) for (k, v) in extra_map_dict.items()}
     return pspace1.make_map(extra_map_dict2)
@@ -288,13 +287,13 @@ def unstack_map(map1, pspace2):
     for point1 in map1.pspace.points():
         for point2 in expand_point(point1, pspace2):
             extra_point = contract_point(point2, extra_space)
-            new_map_dict[point2] = map1.get_value(point1).get_value(extra_point)
+            new_map_dict[point2] = map1[point1][extra_point]
     
     return pspace2.make_map(new_map_dict)
 
 def collapse_map(map1):
     # infer pspace2 then call expand
-    v = map1.get_value(next(map1.pspace.points()))
+    v = map1[next(map1.pspace.points())]
     if not isinstance(v, Map):
         return map1
     else:
@@ -302,43 +301,54 @@ def collapse_map(map1):
         pspace2 = map1.pspace.union(v.pspace)
         return unstack_map(map1, pspace2)
 
+def kwd_apply(function):
+    def func(kwds):
+        return function(**kwds)
+    return func
+    
+    # MappedFunction(
+    #     pspace.lift_function(kwds_apply),
+    #     keys_map(pspace)
+    # )
+
+
 # demo
 if __name__ == '__main__':
     #see it's great now instead of:
-    for i in range(10):
-        print(i)
+    #for i in range(10):
+    #    print(i)
     
     #you just do:
     s1 = ParamSpace({'i': list(range(10))})
     
-    def f(k):
-        print(k['i'])
+    def f(i):
+        print(i)
     
-    s1.lift_function(f).call(keys_map(s1))
+    s1.lift_function(kwd_apply(f))(keys_map(s1))
     
     # also instead of:
-    for i in range(10):
-        for j in range(10):
-            print(i * j)
+    #for i in range(10):
+    #    for j in range(5):
+    #        print(i * j)
             
     #you just do:
     s2 = ParamSpace({'i': list(range(10)), 'j': list(range(5))})
     # (or):
     s2 = s1.add({'j': list(range(5))})
     
-    def f(k):
-        print(k['i'] * k['j'])
+    def f(i, j):
+        print(i * j)
     
-    s2.lift_function(f).call(keys_map(s2))
+    s2.lift_function(kwd_apply(f))(keys_map(s2))
     
     #plus you can do this weird stacking/unstacking thing that doesn't really have an expression in for loops
     #it's kind of like reordering the nesting order of multiple for loops
     km = keys_map(s2)
     
-    stacked_km1 = stack_map(km, s2.drop(['i']))
-    s2.drop(['i']).lift_function(s2.drop(['j']).lift_function(f)).call(stacked_km1)
+    stacked_km1 = stack_map(km, s2.subspace(['j']))
+    s2.subspace(['j']).lift_function(s2.subspace(['i']).lift_function(kwd_apply(f)))(stacked_km1)
     
-    stacked_km2 = stack_map(km, s2.drop(['j']))
-    s2.drop(['j']).lift_function(s2.drop(['i']).lift_function(f)).call(stacked_km2)
+    stacked_km2 = stack_map(km, s2.subspace(['i']))
+    s2.subspace(['i']).lift_function(s2.subspace(['j']).lift_function(kwd_apply(f)))(stacked_km2)
     
     #this library is actually very, very useful and good in my professional work as a real developer (and you should love me)
