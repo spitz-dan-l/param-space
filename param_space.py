@@ -218,6 +218,9 @@ class Function:
 #### convenience stuff
 
 def keys_map(pspace):
+    if not isinstance(pspace, ParamSpace):
+        raise TypeError('pspace must be a ParamSpace, got {}'.format(pspace))
+    
     keys_map = {}
     for p in pspace.points():
         keys_map[p] = p.key
@@ -225,6 +228,9 @@ def keys_map(pspace):
 
 
 def unit_map(pspace, unit=None):
+    if not isinstance(pspace, ParamSpace):
+        raise TypeError('pspace must be a ParamSpace, got {}'.format(pspace))
+    
     unit_map = {}
     for p in pspace.points():
         unit_map[p] = unit
@@ -235,7 +241,7 @@ class MappedFunction:
 
     def __init__(self, function, *arg_maps):
         self.function = function
-        self.cache_map = unit_map(self.function.pspace, unit=unevaluated)
+        self.cache_map = unit_map(self.function.pspace, unit=self.unevaluated)
         self.arg_maps = arg_maps
 
     @property
@@ -246,9 +252,9 @@ class MappedFunction:
         if point.pspace != self.pspace:
             raise TypeError('point must be in the same param space as the map')
         value = self.cache_map[point]
-        if value is unevaluated:
+        if value is self.unevaluated:
             args = [arg_map[point] for arg_map in self.arg_maps]
-            value = self.function.func(*args)
+            value = self.function.function(*args)
             self.cache_map[point] = value
 
         return value
@@ -316,9 +322,9 @@ if __name__ == '__main__':
     s1 = ParamSpace({'i': list(range(10))})
     
     def f(i):
-        print(i)
+        return i
     
-    s1.lift_function(kwd_apply(f))(keys_map(s1))
+    print(s1.lift_function(kwd_apply(f))(keys_map(s1)))
     
     # also instead of:
     #for i in range(10):
@@ -331,18 +337,143 @@ if __name__ == '__main__':
     s2 = s1.add({'j': list(range(5))})
     
     def f(i, j):
-        print(i * j)
+        return i * j
     
-    s2.lift_function(kwd_apply(f))(keys_map(s2))
+    print(s2.lift_function(kwd_apply(f))(keys_map(s2)))
     
     #plus you can do this weird stacking/unstacking thing that doesn't really have an expression in for loops
     #it's kind of like reordering the nesting order of multiple for loops
     km = keys_map(s2)
     
     stacked_km1 = stack_map(km, s2.subspace(['j']))
-    s2.subspace(['j']).lift_function(s2.subspace(['i']).lift_function(kwd_apply(f)))(stacked_km1)
+    print(s2.subspace(['j']).lift_function(s2.subspace(['i']).lift_function(kwd_apply(f)))(stacked_km1))
     
     stacked_km2 = stack_map(km, s2.subspace(['i']))
-    s2.subspace(['i']).lift_function(s2.subspace(['j']).lift_function(kwd_apply(f)))(stacked_km2)
+    print(s2.subspace(['i']).lift_function(s2.subspace(['j']).lift_function(kwd_apply(f)))(stacked_km2))
     
     #this library is actually very, very useful and good in my professional work as a real developer (and you should love me)
+
+    #tree traversal demo
+    class T:
+        def __init__(self, v=None, cs=None):
+            if cs is not None:
+                cs = list(cs)
+                for c in cs:
+                    if not isinstance(c, T):
+                        raise TypeError('child node must be a T. got {}'.format(c))
+
+            self.v = v
+            self.cs = cs
+
+        def depth_first(self):
+            yield self
+            if self.cs is not None:
+                for c in self.cs:
+                    yield from c.depth_first()
+
+        def breadth_first(self):
+            from collections import deque
+   
+            frontier = deque([self])
+            while frontier:
+                node = frontier.popleft()
+                yield node.v
+                if node.cs is not None:
+                    frontier.extend(node.cs)
+
+        def __repr__(self):
+            return 'T({})'.format(self.v)
+
+        def __eq__(self, o):
+            if self.v != o.v:
+                return False
+            if self.cs != o.cs:
+                return False
+            return True
+
+        def __hash__(self):
+            if self.cs is None:
+                return hash(self.v) + hash(None)
+            return hash(self.v) + hash(tuple(self.cs))
+        
+    t1 = \
+    T(1, [
+        T(2, [
+            T(3), T(4), T(5, [T(6, [T(7)])])
+        ]),
+        T(7),
+        T(8),
+        T(9, [T(10, [T(11)])])
+    ])
+
+    all_nodes = list(t1.depth_first())
+    from random import shuffle
+    shuffle(all_nodes) # to show we don't need it in any particular order
+
+    s = ParamSpace({
+        't1': all_nodes,
+        't2': all_nodes
+    })
+
+    #recover the tree structure
+    def get_child_index(t1, t2):
+        if t1.cs is None or t2 not in t1.cs:
+            return None
+        return t1.cs.index(t2)
+
+    child_index_map = s.lift_function(kwd_apply(get_child_index))(keys_map(s))
+
+    #demo: identify only the leaf nodes
+    def is_leaf(child_map):
+        return all(child_map[p] is None for p in child_map.pspace.points())
+
+    stacked_child_index_map = stack_map(child_index_map, s.subspace(['t1']))
+    leaf_map = s.subspace(['t1']).lift_function(is_leaf)(stacked_child_index_map)
+
+    print('leaf map:', leaf_map)
+
+    #demo: build a structural copy (very good and useful)
+    def set_child(key, child_index, new_nodes):
+        if child_index is None:
+            return
+        parent_id = key['t1'].v
+        child_id = key['t2'].v
+        if parent_id not in new_nodes:
+            new_nodes[parent_id] = T(parent_id, None)
+        if child_id not in new_nodes:
+            new_nodes[child_id] = T(child_id, None)
+
+        if new_nodes[parent_id].cs is None:
+            new_nodes[parent_id].cs = []
+
+        child_list_len = len(new_nodes[parent_id].cs)
+        if child_list_len <= child_index:
+            diff = child_index + 1 - child_list_len
+            new_nodes[parent_id].cs.extend([None]*diff)
+
+        new_nodes[parent_id].cs[child_index] = new_nodes[child_id]
+
+    new_nodes = {}
+    s.lift_function(set_child)(keys_map(s), child_index_map, unit_map(s, new_nodes))
+
+    new_nodes[1] == t1
+
+    print('original root node:')
+    print(list(t1.depth_first()))
+
+    print('new root node:')
+    print(list(new_nodes[1].depth_first()))
+    
+    # demo: compute depth of the tree's deepest branch (using the child index map as input)
+    # uses a MappedFunction to cache results so we don't do unnecessary repeats
+    def branch_depth(key, child_index, depth_map):
+        if child_index is None:
+            return 1
+        parent_point = s.subspace(['t1']).make_point({'t1': key['t2']})
+        return 1 + max(depth_map[p] for p in expand_point(parent_point, s))
+
+    depth_map = MappedFunction(s.lift_function(branch_depth))
+    depth_map.arg_maps = (keys_map(s), child_index_map, unit_map(s, depth_map))
+
+    print('max depth is:')
+    print(max(depth_map[p] for p in s.points()))
