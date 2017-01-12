@@ -401,9 +401,9 @@ if __name__ == '__main__':
         T(2, [
             T(3), T(4), T(5, [T(6, [T(7)])])
         ]),
-        T(7),
         T(8),
-        T(9, [T(10, [T(11)])])
+        T(9),
+        T(10, [T(11, [T(12)])])
     ])
 
     all_nodes = list(t1.depth_first())
@@ -430,7 +430,8 @@ if __name__ == '__main__':
     stacked_child_index_map = stack_map(child_index_map, s.subspace(['t1']))
     leaf_map = s.subspace(['t1']).lift_function(is_leaf)(stacked_child_index_map)
 
-    print('leaf map:', leaf_map)
+    print('leaf map:')
+    print(leaf_map)
 
     #demo: build a structural copy (very good and useful)
     def set_child(key, child_index, new_nodes):
@@ -461,19 +462,37 @@ if __name__ == '__main__':
     print('original root node:')
     print(list(t1.depth_first()))
 
-    print('new root node:')
+    print('identical new root node:')
     print(list(new_nodes[1].depth_first()))
     
     # demo: compute depth of the tree's deepest branch (using the child index map as input)
     # uses a MappedFunction to cache results so we don't do unnecessary repeats
-    def branch_depth(key, child_index, depth_map):
+    def branch_depth(key, child_index, node_depth_map):
+        #is this a parent-child relation? if not, depth is 1
         if child_index is None:
             return 1
+        
         parent_point = s.subspace(['t1']).make_point({'t1': key['t2']})
-        return 1 + max(depth_map[p] for p in expand_point(parent_point, s))
+        
+        #check if the child is known to be a leaf
+        if leaf_map[parent_point]:
+            return 2
+        #finally, do the slow way of checking all children of the child
+        return 1 + node_depth_map[parent_point] #1 + max(depth_map[p] for p in expand_point(parent_point, s))
+
+    s_reduced = s.subspace(['t1'])
+
+    def node_depth(key, depth_map):
+        parent_point = s_reduced.make_point(key)
+        return max(depth_map[p] for p in expand_point(parent_point, s))
+
 
     depth_map = MappedFunction(s.lift_function(branch_depth))
-    depth_map.arg_maps = (keys_map(s), child_index_map, unit_map(s, depth_map))
+    node_depth_map = MappedFunction(s_reduced.lift_function(node_depth))
+    
+    depth_map.arg_maps = (keys_map(s), child_index_map, unit_map(s, node_depth_map))
+    node_depth_map.arg_maps = (keys_map(s_reduced), unit_map(s_reduced, depth_map))
+    
 
     print('max depth is:')
-    print(max(depth_map[p] for p in s.points()))
+    print(max(node_depth_map[p] for p in s_reduced.points()))
