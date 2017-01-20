@@ -226,6 +226,14 @@ def keys_map(pspace):
         keys_map[p] = p.key
     return pspace.make_map(keys_map)
 
+def points_map(pspace):
+    if not isinstance(pspace, ParamSpace):
+        raise TypeError('pspace must be a ParamSpace, got {}'.format(pspace))
+    
+    p_map = {}
+    for p in pspace.points():
+        p_map[p] = p
+    return pspace.make_map(p_map)
 
 def unit_map(pspace, unit=None):
     if not isinstance(pspace, ParamSpace):
@@ -271,6 +279,21 @@ def contract_point(point2, pspace1):
     for k in pspace1.spec:
         new_key_dict[k] = point2.key[k]
     return pspace1.make_point(new_key_dict)
+
+def update_point(point1, update_dct, pspace2=None):
+    new_key = point1.key.copy()
+    new_key.update(update_dct)
+    if pspace2 is None:
+        pspace2 = point1.pspace
+    return pspace2.make_point(new_key)
+
+def point_range(pspace, point_subspec):
+    for p in pspace.points():
+        for k in pspace.spec:
+            if k in point_subspec:
+                if p.key[k] not in point_subspec[k]:
+                    continue
+        yield p
 
 def stack_map(map2, pspace1):
     extra_space = map2.pspace.difference(pspace1)
@@ -433,6 +456,39 @@ if __name__ == '__main__':
     print('leaf map:')
     print(leaf_map)
 
+    # demo: compute depth of the tree's deepest branch (using the child index map as input)
+    # uses a MappedFunction to cache results so we don't do unnecessary repeats
+    def branch_depth(key, child_index, node_depth_map):
+        #is this a parent-child relation? if not, depth is 1
+        if child_index is None:
+            return 1
+
+        parent_point = s.subspace(['t1']).make_point({'t1': key['t2']})
+        
+        #optional, saves some lookups here and there
+        #check if the child is known to be a leaf
+        if leaf_map[parent_point]:
+            return 2
+        
+        #finally, do the slow way of checking all children of the child
+        return 1 + node_depth_map[parent_point] #1 + max(depth_map[p] for p in expand_point(parent_point, s))
+
+    s_reduced = s.subspace(['t1'])
+
+    def node_depth(key, depth_map):
+        parent_point = s_reduced.make_point(key)
+        return max(depth_map[p] for p in expand_point(parent_point, s))
+
+
+    depth_map = MappedFunction(s.lift_function(branch_depth))
+    node_depth_map = MappedFunction(s_reduced.lift_function(node_depth))
+    
+    depth_map.arg_maps = (keys_map(s), child_index_map, unit_map(s, node_depth_map))
+    node_depth_map.arg_maps = (keys_map(s_reduced), unit_map(s_reduced, depth_map))
+
+    print('max depth is:')
+    print(max(node_depth_map[p] for p in s_reduced.points()))
+
     #demo: build a structural copy (very good and useful)
     def set_child(key, child_index, new_nodes):
         if child_index is None:
@@ -465,34 +521,84 @@ if __name__ == '__main__':
     print('identical new root node:')
     print(list(new_nodes[1].depth_first()))
     
-    # demo: compute depth of the tree's deepest branch (using the child index map as input)
-    # uses a MappedFunction to cache results so we don't do unnecessary repeats
-    def branch_depth(key, child_index, node_depth_map):
-        #is this a parent-child relation? if not, depth is 1
-        if child_index is None:
-            return 1
-        
-        parent_point = s.subspace(['t1']).make_point({'t1': key['t2']})
-        
-        #check if the child is known to be a leaf
-        if leaf_map[parent_point]:
-            return 2
-        #finally, do the slow way of checking all children of the child
-        return 1 + node_depth_map[parent_point] #1 + max(depth_map[p] for p in expand_point(parent_point, s))
 
-    s_reduced = s.subspace(['t1'])
+    class N:
+        def __init__(self, id):
+            self.id = id
 
-    def node_depth(key, depth_map):
-        parent_point = s_reduced.make_point(key)
-        return max(depth_map[p] for p in expand_point(parent_point, s))
+        def __repr__(self):
+            return 'N({})'.format(self.id)
+
+    class E:
+        def __init__(self, n1, n2):
+            self.n1 = n1
+            self.n2 = n2
+
+    class G:
+        def __init__(self, ns, es):
+            self.ns = ns
+            self.es = es
+
+    n1, n2, n3, n4, n5 = N(1), N(2), N(3), N(4), N(5)
+    e1, e2, e3, e4 = E(n1, n2), E(n2, n3), E(n3, n4), E(n3, n5)
+
+    g = G([n1, n2, n3, n4, n5], [e1, e2, e3, e4])
+    node_space = ParamSpace({'n1': g.ns})
+    node_pair_space = node_space.add({'n2': g.ns})
+
+    def successors(key, graph):
+        return [e.n2 for e in graph.es if e.n1 == key['n1']]
+
+    successor_map = node_space.lift_function(successors)(keys_map(node_space), unit_map(node_space, g))
+
+    def is_edge(key, successors):
+        return key['n2'] in successors #use stack_map for this
+
+    edge_map = node_pair_space.lift_function(is_edge)(
+        keys_map(node_pair_space),
+        collapse_map(
+            unit_map(
+                node_pair_space.subspace(['n2']),
+                successor_map)))
 
 
-    depth_map = MappedFunction(s.lift_function(branch_depth))
-    node_depth_map = MappedFunction(s_reduced.lift_function(node_depth))
+    reachable_in_1_map = edge_map
+    steps_space = ParamSpace({'steps': list(range(1, len(g.ns) + 1))})
+    reachable_space = node_pair_space.union(steps_space)
+
+    def reachable_in_x(p, reachable_in_1_map, reachable_in_x_map):
+        np_point = contract_point(p, node_pair_space)
+        x = p.key['steps']
+        if x == 1:
+            return reachable_in_1_map[contract_point(p, node_pair_space)]
+
+        if reachable_in_x_map[update_point(p, {'steps': x - 1})]:
+            return True
+
+        n_point = contract_point(p, node_pair_space.subspace(['n2']))
+        frontier_points = expand_point(n_point, node_pair_space)
+        for fp in frontier_points:
+            if not reachable_in_1_map[fp]:
+                continue
+            if reachable_in_x_map[
+                    reachable_space.make_point({
+                        'steps': x - 1,
+                        'n1': p.key['n1'],
+                        'n2': fp.key['n1']})]:
+                return True
+
+        return False
+
+    reachable_in_x_map = MappedFunction(reachable_space.lift_function(reachable_in_x))
+    reachable_in_x_map.arg_maps = (
+        points_map(reachable_space),
+        unit_map(reachable_space, reachable_in_1_map),
+        unit_map(reachable_space, reachable_in_x_map))
+
+
+    print('reachable in 2:')
+    print([p for p in expand_point(steps_space.make_point({'steps': 2}), reachable_space) if reachable_in_x_map[p]])
     
-    depth_map.arg_maps = (keys_map(s), child_index_map, unit_map(s, node_depth_map))
-    node_depth_map.arg_maps = (keys_map(s_reduced), unit_map(s_reduced, depth_map))
-    
+    print('reachable in 4:')
+    print([p for p in expand_point(steps_space.make_point({'steps': 4}), reachable_space) if reachable_in_x_map[p]])
 
-    print('max depth is:')
-    print(max(node_depth_map[p] for p in s_reduced.points()))
