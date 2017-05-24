@@ -351,25 +351,25 @@ if __name__ == '__main__':
     #for i in range(10):
     #    for j in range(5):
     #        print(i * j)
-            
+    
     #you just do:
-    s2 = ParamSpace({'i': list(range(10)), 'j': list(range(5))})
-    # (or):
-    s2 = s1.add({'j': list(range(5))})
+    si = s1
+    sj = ParamSpace({'j': list(range(5))})
+    sij = s1.union(sj)
     
     def f(i, j):
         return i * j
     
-    print(s2.lift_function(kwd_apply(f))(keys_map(s2)))
+    print(sij.lift_function(kwd_apply(f))(keys_map(s2)))
     
     #plus you can do this weird stacking/unstacking thing that doesn't really have an expression in for loops
     #it's kind of like reordering the nesting order of multiple for loops
-    km = keys_map(s2)
+    km = keys_map(sij)
     
-    stacked_km1 = stack_map(km, s2.subspace(['j']))
-    print(s2.subspace(['j']).lift_function(s2.subspace(['i']).lift_function(kwd_apply(f)))(stacked_km1))
+    stacked_km1 = stack_map(km, sj)
+    print(sj.lift_function(si.lift_function(kwd_apply(f)))(stacked_km1))
     
-    stacked_km2 = stack_map(km, s2.subspace(['i']))
-    print(s2.subspace(['i']).lift_function(s2.subspace(['j']).lift_function(kwd_apply(f)))(stacked_km2))
+    stacked_km2 = stack_map(km, si)
+    print(si.lift_function(sj.lift_function(kwd_apply(f)))(stacked_km2))
     
     #this library is actually very, very useful and good in my professional work as a real developer (and you should love me)
